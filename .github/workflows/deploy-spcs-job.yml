@@ -175,37 +175,62 @@ jobs:
             --schema "${{ inputs.schema }}"
 
       - name: Execute the Snowpark job service
+        env:
+          LATEST_IMAGE: ${{ env.LATEST_IMAGE }}
+          INPUT_DATABASE: ${{ inputs.database }}
+          INPUT_SCHEMA: ${{ inputs.schema }}
+          INPUT_SERVICE_NAME: ${{ inputs.service_name }}
+          INPUT_COMPUTE_POOL: ${{ inputs.compute_pool }}
+          INPUT_QUERY_WAREHOUSE: ${{ inputs.query_warehouse }}
+          INPUT_EXTERNAL_ACCESS_INTEGRATION: ${{ inputs.external_access_integration }}
+          INPUT_STAGE_NAME: ${{ inputs.stage_name }}
+          INPUT_GITHUB_OWNER: ${{ inputs.github_owner }}
+          INPUT_GITHUB_REPO: ${{ inputs.github_repo }}
+          INPUT_GITHUB_STATE: ${{ inputs.github_state }}
+          INPUT_DATASET_NAME: ${{ inputs.dataset_name }}
+          INPUT_PIPELINE_NAME: ${{ inputs.pipeline_name }}
+          INPUT_FULL_REFRESH: ${{ inputs.full_refresh }}
+          INPUT_TIMEOUT_SECONDS: ${{ inputs.timeout_seconds }}
         run: |
-          cat > "$RUNNER_TEMP/execute_job.sql" <<EOF
-          USE DATABASE ${{ inputs.database }};
-          USE SCHEMA ${{ inputs.schema }};
+          python3 - <<'PY' > "$RUNNER_TEMP/execute_job.sql"
+          import json
+          import os
 
-          DROP SERVICE IF EXISTS ${{ inputs.service_name }} FORCE;
+          def sql_json_string(value: str) -> str:
+              return "'" + json.dumps(value) + "'"
+
+          print(
+              f"""USE DATABASE {os.environ['INPUT_DATABASE']};
+          USE SCHEMA {os.environ['INPUT_SCHEMA']};
+
+          DROP SERVICE IF EXISTS {os.environ['INPUT_SERVICE_NAME']} FORCE;
 
           EXECUTE JOB SERVICE
-            IN COMPUTE POOL ${{ inputs.compute_pool }}
-            NAME = ${{ inputs.service_name }}
+            IN COMPUTE POOL {os.environ['INPUT_COMPUTE_POOL']}
+            NAME = {os.environ['INPUT_SERVICE_NAME']}
             ASYNC = TRUE
-            QUERY_WAREHOUSE = ${{ inputs.query_warehouse }}
-            EXTERNAL_ACCESS_INTEGRATIONS = (${{ inputs.external_access_integration }})
-            FROM @${{ inputs.stage_name }}
+            QUERY_WAREHOUSE = {os.environ['INPUT_QUERY_WAREHOUSE']}
+            EXTERNAL_ACCESS_INTEGRATIONS = ({os.environ['INPUT_EXTERNAL_ACCESS_INTEGRATION']})
+            FROM @{os.environ['INPUT_STAGE_NAME']}
             SPECIFICATION_TEMPLATE_FILE = 'github_issues_job.yaml'
             USING (
-              image_url => '$LATEST_IMAGE',
-              github_owner => '${{ inputs.github_owner }}',
-              github_repo => '${{ inputs.github_repo }}',
-              github_state => '${{ inputs.github_state }}',
-              dataset_name => '${{ inputs.dataset_name }}',
-              pipeline_name => '${{ inputs.pipeline_name }}',
-              full_refresh => '${{ inputs.full_refresh }}',
-              snowflake_database => '${{ inputs.database }}',
-              snowflake_warehouse => '${{ inputs.query_warehouse }}'
+              image_url => {sql_json_string(os.environ['LATEST_IMAGE'])},
+              github_owner => {sql_json_string(os.environ['INPUT_GITHUB_OWNER'])},
+              github_repo => {sql_json_string(os.environ['INPUT_GITHUB_REPO'])},
+              github_state => {sql_json_string(os.environ['INPUT_GITHUB_STATE'])},
+              dataset_name => {sql_json_string(os.environ['INPUT_DATASET_NAME'])},
+              pipeline_name => {sql_json_string(os.environ['INPUT_PIPELINE_NAME'])},
+              full_refresh => {sql_json_string(os.environ['INPUT_FULL_REFRESH'].lower())},
+              snowflake_database => {sql_json_string(os.environ['INPUT_DATABASE'])},
+              snowflake_warehouse => {sql_json_string(os.environ['INPUT_QUERY_WAREHOUSE'])}
             );
 
-          CALL ${{ inputs.service_name }}!SPCS_WAIT_FOR('DONE', ${{ inputs.timeout_seconds }});
+          CALL {os.environ['INPUT_SERVICE_NAME']}!SPCS_WAIT_FOR('DONE', {os.environ['INPUT_TIMEOUT_SECONDS']});
 
-          DESCRIBE SERVICE ${{ inputs.service_name }};
-          EOF
+          DESCRIBE SERVICE {os.environ['INPUT_SERVICE_NAME']};
+          """
+          )
+          PY
 
           snow sql \
             --temporary-connection \

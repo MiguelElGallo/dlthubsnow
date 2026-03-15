@@ -243,6 +243,8 @@ Use the provided example SQL file:
 snow sql --connection mpz --role ACCOUNTADMIN -f snowflake/execute_container_job.example.sql
 ```
 
+The example matters here: Snowflake specification template arguments must be alphanumeric or valid JSON, so values such as `dlt-hub`, image URLs, and schema names with underscores are passed as JSON strings in the `USING (...)` clause.
+
 That example:
 
 1. drops any prior demo service with the same name
