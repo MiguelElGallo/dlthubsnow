@@ -1,0 +1,42 @@
+name: Validate Snowflake container demo
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-container-demo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: '3.11'
+          enable-cache: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Sync project environment
+        run: uv sync --locked
+
+      - name: Run local tests
+        run: uv run --locked pytest
+
+      - name: Parse dbt project
+        run: |
+          mkdir -p "$RUNNER_TEMP/dbt-profiles"
+          cp profiles/profiles.template.yml "$RUNNER_TEMP/dbt-profiles/profiles.yml"
+          uv run --locked dbt parse --profiles-dir "$RUNNER_TEMP/dbt-profiles"
+
+      - name: Check container entrypoint syntax
+        run: sh -n container/entrypoint.sh
+
+      - name: Build Snowpark container image
+        run: docker buildx build --platform linux/amd64 -f container/Dockerfile -t dlthubsnow:ci --load .

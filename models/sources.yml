@@ -1,0 +1,10 @@
+version: 2
+
+sources:
+  - name: github_raw
+    description: Raw GitHub issues loaded by dlt into Snowflake.
+    database: "{{ env_var('DBT_SOURCE_DATABASE', env_var('DBT_DATABASE', 'DLT_GITHUB_DEMO')) }}"
+    schema: "{{ env_var('DBT_SOURCE_SCHEMA', 'github_issues_demo') }}"
+    tables:
+      - name: github_issues
+        description: Issue snapshots loaded from the GitHub Issues API by dlt.

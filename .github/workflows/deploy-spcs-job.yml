@@ -1,0 +1,221 @@
+name: Build and run SPCS job
+
+on:
+  workflow_dispatch:
+    inputs:
+      github_owner:
+        description: GitHub repository owner to load issues from.
+        required: true
+        default: dlt-hub
+        type: string
+      github_repo:
+        description: GitHub repository name to load issues from.
+        required: true
+        default: dlt
+        type: string
+      github_state:
+        description: Issue state filter sent to the GitHub API.
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - open
+          - closed
+      dataset_name:
+        description: Snowflake schema/dataset used by dlt for raw tables.
+        required: true
+        default: github_issues_demo
+        type: string
+      pipeline_name:
+        description: dlt pipeline name restored inside the job container.
+        required: true
+        default: dlthubsnow
+        type: string
+      full_refresh:
+        description: Replace destination data instead of running the default incremental merge.
+        required: true
+        default: false
+        type: boolean
+      service_name:
+        description: Snowflake job service name to execute.
+        required: true
+        default: GITHUB_ISSUES_LOAD_JOB
+        type: string
+      database:
+        description: Database containing the image repository and stage.
+        required: true
+        default: DLT_GITHUB_DEMO
+        type: string
+      schema:
+        description: Schema containing the image repository and stage.
+        required: true
+        default: PUBLIC
+        type: string
+      compute_pool:
+        description: Compute pool used by EXECUTE JOB SERVICE.
+        required: true
+        default: DLT_GITHUB_DEMO_POOL
+        type: string
+      image_repository:
+        description: Snowflake image repository name.
+        required: true
+        default: DLT_GITHUB_REPO
+        type: string
+      stage_name:
+        description: Snowflake stage holding the job spec file.
+        required: true
+        default: DLT_GITHUB_CONTAINER_STAGE
+        type: string
+      query_warehouse:
+        description: Warehouse used for the job service query context.
+        required: true
+        default: DLT_GITHUB_DEMO_WH
+        type: string
+      external_access_integration:
+        description: External access integration that allows GitHub API egress.
+        required: true
+        default: DLT_GITHUB_GH_EAI
+        type: string
+      timeout_seconds:
+        description: Seconds to wait for the async job service to finish.
+        required: true
+        default: "1800"
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+  SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+  SNOWFLAKE_ROLE: ${{ secrets.SNOWFLAKE_ROLE }}
+
+jobs:
+  deploy-and-run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Install Snowflake CLI
+        run: python -m pip install --upgrade pip snowflake-cli
+
+      - name: Write private key
+        run: |
+          echo "${{ secrets.SNOWFLAKE_PRIVATE_KEY }}" | base64 --decode > "$RUNNER_TEMP/snowflake_key.p8"
+          chmod 600 "$RUNNER_TEMP/snowflake_key.p8"
+
+      - name: Resolve Snowflake image repository URL
+        id: registry
+        run: |
+          registry_url="$(
+            snow spcs image-repository url "${{ inputs.image_repository }}" \
+              --temporary-connection \
+              --account "$SNOWFLAKE_ACCOUNT" \
+              --user "$SNOWFLAKE_USER" \
+              --authenticator SNOWFLAKE_JWT \
+              --private-key-file "$RUNNER_TEMP/snowflake_key.p8" \
+              --role "$SNOWFLAKE_ROLE" \
+              --database "${{ inputs.database }}" \
+              --schema "${{ inputs.schema }}" \
+              | tr -d '[:space:]'
+          )"
+          echo "url=$registry_url" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to Snowflake image registry
+        run: |
+          snow spcs image-registry login \
+            --temporary-connection \
+            --account "$SNOWFLAKE_ACCOUNT" \
+            --user "$SNOWFLAKE_USER" \
+            --authenticator SNOWFLAKE_JWT \
+            --private-key-file "$RUNNER_TEMP/snowflake_key.p8" \
+            --role "$SNOWFLAKE_ROLE"
+
+      - name: Build container image on the GitHub runner
+        run: |
+          full_image="${{ steps.registry.outputs.url }}/dlthubsnow:${{ github.sha }}"
+          latest_image="${{ steps.registry.outputs.url }}/dlthubsnow:latest"
+          docker buildx build \
+            --platform linux/amd64 \
+            -f container/Dockerfile \
+            -t "$full_image" \
+            -t "$latest_image" \
+            --load \
+            .
+          echo "FULL_IMAGE=$full_image" >> "$GITHUB_ENV"
+          echo "LATEST_IMAGE=$latest_image" >> "$GITHUB_ENV"
+
+      - name: Push image to the Snowflake registry
+        run: |
+          docker push "$FULL_IMAGE"
+          docker push "$LATEST_IMAGE"
+
+      - name: Upload the job spec template
+        run: |
+          snow stage copy snowflake/github_issues_job.yaml "@${{ inputs.stage_name }}/" \
+            --overwrite \
+            --temporary-connection \
+            --account "$SNOWFLAKE_ACCOUNT" \
+            --user "$SNOWFLAKE_USER" \
+            --authenticator SNOWFLAKE_JWT \
+            --private-key-file "$RUNNER_TEMP/snowflake_key.p8" \
+            --role "$SNOWFLAKE_ROLE" \
+            --database "${{ inputs.database }}" \
+            --schema "${{ inputs.schema }}"
+
+      - name: Execute the Snowpark job service
+        run: |
+          cat > "$RUNNER_TEMP/execute_job.sql" <<EOF
+          USE DATABASE ${{ inputs.database }};
+          USE SCHEMA ${{ inputs.schema }};
+
+          DROP SERVICE IF EXISTS ${{ inputs.service_name }} FORCE;
+
+          EXECUTE JOB SERVICE
+            IN COMPUTE POOL ${{ inputs.compute_pool }}
+            NAME = ${{ inputs.service_name }}
+            ASYNC = TRUE
+            QUERY_WAREHOUSE = ${{ inputs.query_warehouse }}
+            EXTERNAL_ACCESS_INTEGRATIONS = (${{ inputs.external_access_integration }})
+            FROM @${{ inputs.stage_name }}
+            SPECIFICATION_TEMPLATE_FILE = 'github_issues_job.yaml'
+            USING (
+              image_url => '$LATEST_IMAGE',
+              github_owner => '${{ inputs.github_owner }}',
+              github_repo => '${{ inputs.github_repo }}',
+              github_state => '${{ inputs.github_state }}',
+              dataset_name => '${{ inputs.dataset_name }}',
+              pipeline_name => '${{ inputs.pipeline_name }}',
+              full_refresh => '${{ inputs.full_refresh }}',
+              snowflake_database => '${{ inputs.database }}',
+              snowflake_warehouse => '${{ inputs.query_warehouse }}'
+            );
+
+          CALL ${{ inputs.service_name }}!SPCS_WAIT_FOR('DONE', ${{ inputs.timeout_seconds }});
+
+          DESCRIBE SERVICE ${{ inputs.service_name }};
+          EOF
+
+          snow sql \
+            --temporary-connection \
+            --account "$SNOWFLAKE_ACCOUNT" \
+            --user "$SNOWFLAKE_USER" \
+            --authenticator SNOWFLAKE_JWT \
+            --private-key-file "$RUNNER_TEMP/snowflake_key.p8" \
+            --role "$SNOWFLAKE_ROLE" \
+            -f "$RUNNER_TEMP/execute_job.sql"
+
+      - name: Clean up key material
+        if: always()
+        run: rm -f "$RUNNER_TEMP/snowflake_key.p8"

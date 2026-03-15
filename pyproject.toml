@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dlthubsnow"
+version = "0.1.0"
+description = "Load GitHub public repository issues into Snowflake with dlt"
+readme = "README.md"
+requires-python = ">=3.9.2"
+dependencies = [
+  "dlt[snowflake]>=1.23.0,<2.0",
+  "requests>=2.31,<3.0",
+]
+
+[dependency-groups]
+dev = [
+  "dbt-snowflake>=1.8,<2.0",
+  "pytest>=8.0,<9.0",
+]
+
+[project.scripts]
+dlthubsnow = "dlthubsnow.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.uv]
+default-groups = ["dev"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

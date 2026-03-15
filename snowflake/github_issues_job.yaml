@@ -1,0 +1,21 @@
+spec:
+  containers:
+    - name: github-issues-load
+      image: "{{ image_url }}"
+      env:
+        DLTHUBSNOW_OWNER: "{{ github_owner }}"
+        DLTHUBSNOW_REPO: "{{ github_repo }}"
+        DLTHUBSNOW_STATE: "{{ github_state }}"
+        DLTHUBSNOW_DATASET_NAME: "{{ dataset_name }}"
+        DLTHUBSNOW_PIPELINE_NAME: "{{ pipeline_name }}"
+        DLTHUBSNOW_FULL_REFRESH: "{{ full_refresh }}"
+        DESTINATION__SNOWFLAKE__CREDENTIALS__AUTHENTICATOR: "oauth"
+        DESTINATION__SNOWFLAKE__CREDENTIALS__DATABASE: "{{ snowflake_database }}"
+        DESTINATION__SNOWFLAKE__CREDENTIALS__WAREHOUSE: "{{ snowflake_warehouse }}"
+      resources:
+        requests:
+          cpu: "1"
+          memory: 2Gi
+        limits:
+          cpu: "1"
+          memory: 2Gi

@@ -1,0 +1,16 @@
+version: 2
+
+models:
+  - name: github_issues_curated
+    description: Curated Snowflake-friendly view over the raw dlt-loaded github_issues table.
+    columns:
+      - name: issue_id
+        description: Stable GitHub issue identifier from the raw source table.
+      - name: issue_number
+        description: Repository-scoped GitHub issue number.
+      - name: is_open
+        description: True when the issue state is open.
+      - name: issue_age_days
+        description: Days between creation and closure, or between creation and now for open issues.
+      - name: days_since_update
+        description: Days since the issue was last updated in GitHub.

@@ -1,0 +1,15 @@
+# Safe committed template for Snowflake dbt Projects and optional local dbt parse.
+# Do not add password fields here: Snowflake dbt project deployment stops if passwords are present.
+dlthubsnow:
+  target: dev
+  outputs:
+    dev:
+      type: snowflake
+      account: "{{ env_var('DBT_SNOWFLAKE_ACCOUNT', 'account_locator.region.cloud') }}"
+      user: "{{ env_var('DBT_SNOWFLAKE_USER', 'dbt_user') }}"
+      role: "{{ env_var('DBT_SNOWFLAKE_ROLE', 'transformer') }}"
+      warehouse: "{{ env_var('DBT_SNOWFLAKE_WAREHOUSE', 'DLT_GITHUB_DEMO_WH') }}"
+      database: "{{ env_var('DBT_DATABASE', 'DLT_GITHUB_DEMO') }}"
+      schema: "{{ env_var('DBT_SCHEMA', 'github_issues_analytics') }}"
+      threads: 4
+      client_session_keep_alive: false

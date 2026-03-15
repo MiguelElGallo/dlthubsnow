@@ -1,0 +1,62 @@
+name: Setup Snowflake SPCS infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      setup_role:
+        description: Role used to create the demo infrastructure.
+        required: true
+        default: ACCOUNTADMIN
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+  SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Snowflake CLI
+        run: python -m pip install --upgrade pip snowflake-cli
+
+      - name: Write private key
+        run: |
+          echo "${{ secrets.SNOWFLAKE_PRIVATE_KEY }}" | base64 --decode > "$RUNNER_TEMP/snowflake_key.p8"
+          chmod 600 "$RUNNER_TEMP/snowflake_key.p8"
+
+      - name: Run Snowflake setup SQL
+        run: |
+          snow sql \
+            --temporary-connection \
+            --account "$SNOWFLAKE_ACCOUNT" \
+            --user "$SNOWFLAKE_USER" \
+            --authenticator SNOWFLAKE_JWT \
+            --private-key-file "$RUNNER_TEMP/snowflake_key.p8" \
+            --role "${{ inputs.setup_role }}" \
+            -f snowflake/setup_demo.sql
+
+          snow sql \
+            --temporary-connection \
+            --account "$SNOWFLAKE_ACCOUNT" \
+            --user "$SNOWFLAKE_USER" \
+            --authenticator SNOWFLAKE_JWT \
+            --private-key-file "$RUNNER_TEMP/snowflake_key.p8" \
+            --role "${{ inputs.setup_role }}" \
+            -f snowflake/setup_container_demo.sql
+
+      - name: Clean up key material
+        if: always()
+        run: rm -f "$RUNNER_TEMP/snowflake_key.p8"

@@ -1,0 +1,20 @@
+select
+  id as issue_id,
+  number as issue_number,
+  title,
+  state,
+  iff(state = 'open', true, false) as is_open,
+  state_reason,
+  repository_owner,
+  repository_name,
+  author_login,
+  assignee_login,
+  comments as comment_count,
+  coalesce(array_size(label_names), 0) as label_count,
+  created_at,
+  updated_at,
+  closed_at,
+  datediff('day', created_at, coalesce(closed_at, current_timestamp())) as issue_age_days,
+  datediff('day', updated_at, current_timestamp()) as days_since_update,
+  html_url
+from {{ source('github_raw', 'github_issues') }}
