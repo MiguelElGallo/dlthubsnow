@@ -88,7 +88,7 @@ Install [`uv`](https://docs.astral.sh/uv/) first if needed, then sync:
 uv sync --python 3.13
 ```
 
-This repo uses `uv` for local validation and container build preparation. It does **not** use `uv run dlthubsnow` as the demo runtime path.
+This repo uses `uv` for local validation and container build preparation. Local tooling now requires **Python 3.10+**. It does **not** use `uv run dlthubsnow` as the demo runtime path.
 
 ### 2) Validate the Snow CLI connection used in this repo
 

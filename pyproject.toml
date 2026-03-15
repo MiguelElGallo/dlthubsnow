@@ -7,7 +7,7 @@ name = "dlthubsnow"
 version = "0.1.0"
 description = "Load GitHub public repository issues into Snowflake with dlt"
 readme = "README.md"
-requires-python = ">=3.9.2"
+requires-python = ">=3.10"
 dependencies = [
   "dlt[snowflake]>=1.23.0,<2.0",
   "requests>=2.31,<3.0",
